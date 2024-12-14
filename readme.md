@@ -35,11 +35,7 @@ API。
 2. 渲染：每个组件都有一个 render 方法，用于渲染组件的内容。在该方法中，你可以定义组件的模板。
 3. 响应式属性：属性用于保存组件的状态。当组件的响应式属性发生变化时，会触发更新周期，从而重新渲染组件。
 4. 样式：组件可以定义封装的样式，用于控制自身的外观，样式默认与组件外部隔离。
-5. 生命周期：Lit 定义了一组生命周期回调方法，开发者可以重写这些方法来在组件的生命周期中插入自定义逻辑。例如，在元素被添加到页面时运行代码，或者在组件更新时执行特定操作。
-    * connectedCallback:元素被添加到页面时调用。
-    * disconnectedCallback:元素从页面移除时调用。
-    * updated(changedProperties):响应式属性更新后调用。
-    * firstUpdated(changedProperties):元素首次更新完成后调用。
+5. 生命周期：Lit 定义了一组生命周期回调方法，开发者可以重写这些方法来在组件的生命周期中插入自定义逻辑。
 
 在 src 目录下面新建一个 simple-greeting.ts 文件，加入以下代码
 
@@ -379,3 +375,130 @@ static styles = css`...`;
 static styles = [ css`...`, css`...`];
 ```
 
+#### 使用表达式定义静态样式
+
+静态样式适用于组件的所有实例。CSS中的任何表达式只计算一次，然后在所有实例中重用。对于基于树或每个实例的样式定制，使用CSS自定义属性来允许元素被主题化。为了防止Lit组件评估潜在的恶意代码，css标签只允许嵌套表达式本身是css标记的字符串或数字。
+
+```
+const mainColor = css`red`;
+...
+static styles = css`
+  div { color: ${mainColor} }
+`;
+```
+
+如果需要在样式中使用未标记的动态表达式（如普通字符串），可以通过 unsafeCSS() 函数包裹它。 但注意：此方法仅适用于完全可信的表达式，否则会带来安全风险。
+
+```
+const mainColor = 'red';
+...
+static styles = css`
+  div { color: ${unsafeCSS(mainColor)} }
+`;
+```
+
+#### 共享样式
+
+可以通过创建一个导出带标签样式的模块来在组件之间共享样式。
+
+```
+export const buttonStyles = css`
+  .blue-button {
+    color: white;
+    background-color: blue;
+  }
+  .blue-button:disabled {
+    background-color: grey;
+  }`;
+```
+
+然后，你的元素可以导入这些样式，并将它们添加到它的静态样式类字段中。
+
+```
+import { buttonStyles } from './button-styles.js';
+
+class MyElement extends LitElement {
+  static styles = [
+    buttonStyles,
+    css`
+      :host { display: block;
+        border: 1px solid black;
+      }`
+  ];
+}
+```
+
+另外，你可以使用 Shadow DOM 来处理样式隔离问题，具体你可以查看我以往的文字 web components 里的 Shadow DOM 部分的内容，或者查看 MDN 文档。
+
+### 生命周期
+
+Lit组件使用标准的自定义元素生命周期方法。此外，Lit还引入了一个响应式更新周期，当响应式属性发生变化时，它会将更改呈现给DOM。
+
+#### 标准自定义元素的生命周期
+
+##### constructor():
+  
+创建元素时调用。此外，在升级现有元素时也会调用它，当自定义元素的定义在元素已经在DOM中之后加载时，就会发生这种情况。
+
+```
+constructor() {
+  super();
+  this.foo = 'foo';
+  this.bar = 'bar';
+}
+```
+    
+##### connectedCallback()
+
+当元素被插入到 DOM 中时调用。
+
+```
+connectedCallback() {
+  super.connectedCallback()
+  window.addEventListener('keydown', this._handleKeydown);
+}
+```
+
+##### disconnectedCallback()
+
+当元素从 DOM 中移除时调用。
+
+```
+disconnectedCallback() {
+  super.disconnectedCallback()
+  window.removeEventListener('keydown', this._handleKeydown);
+}
+```
+
+##### attributeChangedCallback()
+
+当观察的属性值发生变化时调用。Lit 通常通过响应式属性来代替直接操作 attributeChangedCallback。
+
+Lit使用这个回调将属性的变化同步到响应属性。具体来说，当设置一个属性时，相应的属性也被设置。Lit还会自动设置元素的 **observedatattributes** 数组，以匹配组件的响应属性列表。
+
+
+### 响应式更新机制
+
+响应式更新周期的触发条件:
+1. 响应式属性的值发生变化：
+使用 @property 或 @state 定义的属性，如果值被修改，会自动触发更新。
+2. 显式调用 requestUpdate() 方法：
+如果需要手动触发更新（例如某些非响应式数据变化），可以调用 requestUpdate()。
+
+异步更新和批量处理:
+1. 当响应式属性发生变化时，更新不会立即进行，而是等待完成所有可能的属性修改后再批量执行。
+2. 在更新周期开始前，所有响应式属性的最终值都会被收集，确保一个更新周期处理所有变化。
+
+更新发生在微任务时间，这意味着它们发生在浏览器将下一帧绘制到屏幕之前。
+
+每当组件的更新完成并且元素的DOM被更新和呈现时调用 updated 方法，我们可以处理一些自定义的逻辑
+
+```
+updated(changedProperties: Map<string, any>) {
+  if (changedProperties.has('collapsed')) {
+    this._measureDOM();
+  }
+}
+```
+
+更多详细内容可以查看 [Lit](https://lit.dev/docs/) 官网
